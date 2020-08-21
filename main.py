@@ -26,16 +26,16 @@ class NewsDict:
         self.filename = 'dump.pickle'
         if load:
             self.load()
-        print(self.dict)
 
+    # Serializing byte stream to dictionary
     def load(self):
         try:
             with open(self.filename, 'rb') as f:
                 self.dict = pickle.load(f)
         except Exception as e:
-            print(e)
             pass
 
+    # Deserializing dictionary for future reference
     def dump(self):
         for k, v in self.dict.items():
             if v == 0:
@@ -135,14 +135,12 @@ for cols in article_cols:
     articles = cols.find_all('a', href=True)
     article_links.extend(articles)
 
-print(len(article_links))
 cards = get_article(article_links)
 news = {
     URL: cards
 }
 print('Parsing complete. :)')
-print(len(cards))
-# pprint.pprint(cards)
+print('Total new articles found :->', len(cards))
 
 # Maintaining all information in json file.
 with open('parse.json', 'w+') as j:
@@ -156,4 +154,5 @@ with open('parse.json', 'w+') as j:
     data[URL].extend(news[URL])
     json.dump(data, j, indent=4)
 
+# To store dictionary state for next run
 nDict.dump()
