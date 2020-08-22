@@ -37,11 +37,13 @@ class NewsDict:
 
     # Deserializing dictionary for future reference
     def dump(self):
+        lis = []
         for k, v in self.dict.items():
             if v == 0:
-                self.dict.pop(k)
+                lis.append(k)
             else:
                 self.dict[k] = 0
+        [self.dict.pop(k) for k in lis]
         try:
             with open(self.filename, 'wb') as f:
                 pickle.dump(self.dict, f)
@@ -56,21 +58,8 @@ class NewsDict:
         return True
 
 
-URL = 'https://www.telegraphindia.com/'
-page = requests.get(URL)
-print('Request sent...')
-
-soup = BeautifulSoup(page.content, 'html.parser')
-
-# Deleting commented out elements from DOM
-for child in soup.body.div.children:
-    if isinstance(child, Comment):
-        child.extract()
-
-result = soup.find('div', class_='container mainContainer uk-background-default pt-3')
-
-print('Parsing...')
-article_cols = result.find_all('div', class_='row')
+BASE_URL = 'https://www.telegraphindia.com'
+URL = BASE_URL + '/world/page-{}'
 
 nDict = NewsDict()
 
@@ -96,7 +85,7 @@ def parse_text(element):
         return format_string(p.text)
     string_lists = format_list(list(element.strings))
     if len(string_lists) >= 2:
-        return format_string(string_lists[-1])
+        return format_string(string_lists[-2])
     return ''
 
 
@@ -110,12 +99,21 @@ def is_article(hyperlink):
     return link, format_string(h2.text), parse_text(hyperlink)
 
 
+def is_article_for_row(row):
+    if row.find('h2') is None:
+        return None
+    h2 = row.find('h2')
+    date = row.find('span').text
+    link = h2.find('a', href=True)['href']
+    return link, format_string(h2.text), parse_text(row), date
+
+
 # extract texts from articles.
 def get_article(hyperlinks):
     card = []
     for hyperlink in hyperlinks:
         article = is_article(hyperlink)
-        if article is not None:
+        if article is not None and article[2] != '':
             uid = int(article[0].split('/')[-1])
             if nDict.check(uid) is False:
                 card.append(
@@ -129,30 +127,75 @@ def get_article(hyperlinks):
     return card
 
 
-# extracting all anchor tag within the body
-article_links = []
-for cols in article_cols:
-    articles = cols.find_all('a', href=True)
-    article_links.extend(articles)
+def get_article_from_row(rows):
+    card = []
+    for row in rows:
+        article = is_article_for_row(row)
+        if article is not None and article[2] != '':
+            uid = int(article[0].split('/')[-1])
+            if nDict.check(uid) is False:
+                card.append(
+                    {
+                        'link': BASE_URL + article[0],
+                        'headline': article[1],
+                        'text': article[2],
+                        'time': article[3]
+                    }
+                )
+    return card
 
-cards = get_article(article_links)
+
+def MAKE_REQUEST(num_pages):
+    cards = []
+    for idx in range(1, num_pages + 1):
+        page = requests.get(URL.format(idx))
+        print('Request sent...')
+
+        soup = BeautifulSoup(page.content, 'html.parser')
+
+        # Deleting commented out elements from DOM
+        for child in soup.body.div.children:
+            if isinstance(child, Comment):
+                child.extract()
+
+        result = soup.find('div', class_='container uk-background-default pt-3 mainContainer')
+
+        print('Parsing Page {} ....'.format(idx))
+        article_cols = result.find_all('div', class_='row')
+        # article_cols = article_cols.find_all('div',class_='row')
+        # extracting all anchor tag within the body
+        articles = []
+        for cols in article_cols:
+            article = cols.find_all('div', class_='row')
+            articles.extend(article)
+
+        print(len(articles))
+        with open('a.txt', 'w') as f:
+            f.write(str(articles))
+
+        cards.extend(get_article_from_row(articles))
+    print('Parsing complete. :)')
+    return cards
+
+
 news = {
-    URL: cards
+    BASE_URL: MAKE_REQUEST(10)
 }
-print('Parsing complete. :)')
-print('Total new articles found :->', len(cards))
+print('Total new articles found :->', len(news[BASE_URL]))
 
 # Maintaining all information in json file.
-with open('parse.json', 'w+') as j:
+with open('parse.json', 'r+', encoding='utf-8', errors='ignore') as j:
     try:
-        data = json.load(j)
+        data = json.load(j, strict=False)
 
     except:
         data = {
-            URL: []
+            BASE_URL: []
         }
-    data[URL].extend(news[URL])
-    json.dump(data, j, indent=4)
 
-# To store dictionary state for next run
-nDict.dump()
+data[BASE_URL].extend(news[BASE_URL])
+
+with open('parse.json', 'w', encoding='utf-8', errors='ignore') as j:
+    json.dump(data, j, indent=4)
+    # To store dictionary state for next run
+    nDict.dump()
